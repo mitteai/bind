@@ -6,8 +6,8 @@ defmodule Bind.MixProject do
   def project do
     [
       app: :bind,
-      version: "0.5.0",
-      elixir: "~> 1.17",
+      version: "0.5.1",
+      elixir: "~> 1.14",
       source_url: @source_url,
       homepage_url: @source_url,
       description:

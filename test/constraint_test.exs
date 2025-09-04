@@ -45,12 +45,12 @@ defmodule Bind.ConstraintTest do
 
     test "starts_with constraint" do
       query = QueryBuilder.constraint(:name, "starts_with", "A")
-      assert inspect(query) =~ "ilike(r.name, ^\"%A\")"
+      assert inspect(query) =~ "ilike(r.name, ^\"A%\")"
     end
 
     test "ends_with constraint" do
       query = QueryBuilder.constraint(:name, "ends_with", "e")
-      assert inspect(query) =~ "ilike(r.name, ^\"e%\")"
+      assert inspect(query) =~ "ilike(r.name, ^\"%e\")"
     end
 
     test "in constraint" do

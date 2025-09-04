@@ -124,11 +124,11 @@ end
   end
 
   def constraint(field, "starts_with", value) do
-    dynamic([r], ilike(field(r, ^field), ^"%#{value}"))
+    dynamic([r], ilike(field(r, ^field), ^"#{value}%"))
   end
 
   def constraint(field, "ends_with", value) do
-    dynamic([r], ilike(field(r, ^field), ^"#{value}%"))
+    dynamic([r], ilike(field(r, ^field), ^"%#{value}"))
   end
 
   def constraint(field, "in", value) do

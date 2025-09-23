@@ -18,6 +18,7 @@ Now your endpoint supports all these queries out of the box:
 GET /users?name[contains]=john&sort=-id&limit=25
 GET /users?salary[gte]=50000&location[eq]=berlin
 GET /users?joined_at[lt]=2024-01-01&status[neq]=disabled
+GET /users?options.prompt[contains]=motorbike
 ```
 
 Bind is a flexible and dynamic Ecto query builder, for retrieving data flexibly without writing custom queries for each use case.
@@ -29,7 +30,7 @@ Add `bind` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bind, "~> 0.1.1"}
+    {:bind, "~> 0.6.0"}
   ]
 end
 ```
@@ -124,6 +125,29 @@ List of comparison operators supported:
 -   `in`: In a list of values
 -   `contains`: String contains
 -   `nil`: Is nil (or is not nil)
+
+### JSONB Search
+
+For PostgreSQL JSONB columns, use dot notation to search within JSON fields:
+
+```ex
+%{"options.prompt[contains]" => "motorbike"}
+%{"metadata.duration[eq]" => "5"}
+%{"config.settings[starts_with]" => "prod"}
+```
+
+Examples in URLs:
+```
+GET /videos?options.prompt[contains]=motorbike
+GET /users?preferences.theme[eq]=dark
+GET /posts?metadata.tags[contains]=elixir
+```
+
+Supported JSONB operators:
+- `eq`: Exact match
+- `contains`: Case-insensitive substring search
+- `starts_with`: Case-insensitive prefix search
+- `ends_with`: Case-insensitive suffix search
 
 ### Sorting
 

@@ -167,18 +167,28 @@ defmodule Bind do
   def map(params, field_mappers) when is_map(params) do
     Enum.reduce(params, %{}, fn {key, value}, acc ->
       case Bind.Parse.where_field(key) do
-	[field_name, _] ->
+        # Handle regular fields [field_name, constraint]
+        [field_name, _] ->
           field = to_string(field_name)
           # Try exact match first, then regex patterns for where fields
           new_value = find_mapper(field_mappers, field).(value)
           Map.put(acc, key, new_value)
 
-	nil ->
+        # Handle JSONB fields [json_field, json_key, constraint]
+        [json_field, _json_key, _constraint] ->
+          field = to_string(json_field)
+          # Apply mapper to the main JSON field (e.g., "options")
+          new_value = find_mapper(field_mappers, field).(value)
+          Map.put(acc, key, new_value)
+
+        # Handle non-where fields (like start, limit)
+        nil ->
           # For non-where fields (like start, limit), check if it's negated
-          {field, is_negated} = case String.starts_with?(key, "-") do
-				  true -> {String.trim_leading(key, "-"), true}
-				  false -> {key, false}
-				end
+          {field, is_negated} =
+            case String.starts_with?(key, "-") do
+              true -> {String.trim_leading(key, "-"), true}
+              false -> {key, false}
+            end
 
           # Find mapper using non-negated field name
           new_value = find_mapper(field_mappers, field).(value)
@@ -189,7 +199,6 @@ defmodule Bind do
       end
     end)
   end
-
 
   defp find_mapper(mappers, field) do
     # Try exact match

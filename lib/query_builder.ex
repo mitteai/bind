@@ -38,8 +38,8 @@ end
             nil ->
               dynamic
 
-            [prop, constraint] ->
-              case constraint(prop, constraint, param_value) do
+            parsed_field ->
+              case build_constraint(parsed_field, param_value) do
                 {:error, reason} ->
                   {:error, reason}
 
@@ -57,8 +57,8 @@ end
         nil ->
           nil
 
-        [field, operator] ->
-          case constraint(field, operator, param_value) do
+        parsed_field ->
+          case build_constraint(parsed_field, param_value) do
             {:error, reason} -> {:error, reason}
             _ -> nil
           end
@@ -72,6 +72,15 @@ end
       "" -> [asc: :id]
       sort_param -> Bind.Parse.sort_field(sort_param)
     end
+  end
+
+  # Handle both regular fields and JSONB fields
+  defp build_constraint([field, constraint], value) do
+    constraint(field, constraint, value)
+  end
+
+  defp build_constraint([json_field, json_key, constraint], value) do
+    jsonb_constraint(json_field, json_key, constraint, value)
   end
 
   @doc """
@@ -151,5 +160,26 @@ end
   def constraint(field, constraint, _value) do
     # Here we add an error clause that matches any unknown constraint.
     {:error, "Invalid constraint: #{field}[#{constraint}]"}
+  end
+
+  # JSONB constraint functions
+  def jsonb_constraint(json_field, json_key, "eq", value) do
+    dynamic([r], fragment("? ->> ? = ?", field(r, ^json_field), ^json_key, ^value))
+  end
+
+  def jsonb_constraint(json_field, json_key, "contains", value) do
+    dynamic([r], fragment("? ->> ? ILIKE ?", field(r, ^json_field), ^json_key, ^"%#{value}%"))
+  end
+
+  def jsonb_constraint(json_field, json_key, "starts_with", value) do
+    dynamic([r], fragment("? ->> ? ILIKE ?", field(r, ^json_field), ^json_key, ^"#{value}%"))
+  end
+
+  def jsonb_constraint(json_field, json_key, "ends_with", value) do
+    dynamic([r], fragment("? ->> ? ILIKE ?", field(r, ^json_field), ^json_key, ^"%#{value}"))
+  end
+
+  def jsonb_constraint(json_field, json_key, constraint, _value) do
+    {:error, "Invalid JSONB constraint: #{json_field}.#{json_key}[#{constraint}]"}
   end
 end

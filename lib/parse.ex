@@ -28,6 +28,7 @@ defmodule Bind.Parse do
 
   @doc """
   Parses a where parameter to extract the field name and constraint.
+  Now supports JSONB dot notation like "options.prompt[contains]".
 
   ## Parameters
     - `param`: The where parameter as a string.
@@ -37,16 +38,24 @@ defmodule Bind.Parse do
       > Bind.Parse.where_field("name[eq]")
       [:name, "eq"]
 
-      > Bind.Parse.where_field("age[gte]")
-      [:age, "gte"]
+      > Bind.Parse.where_field("options.prompt[contains]")
+      [:options, "prompt", "contains"]
 
   """
   def where_field(param) do
-    case Regex.match?(~r/^\w+\[\w+\]$/, param) do
+    case Regex.match?(~r/^\w+(\.\w+)?\[\w+\]$/, param) do
       true ->
-        [prop, constraint] = String.split(param, "[")
+        [field_part, constraint] = String.split(param, "[")
         constraint = String.trim(constraint, "]")
-        [String.to_atom(prop), constraint]
+
+        case String.contains?(field_part, ".") do
+          true ->
+            [json_field, json_key] = String.split(field_part, ".")
+            [String.to_atom(json_field), json_key, constraint]
+
+          false ->
+            [String.to_atom(field_part), constraint]
+        end
 
       false ->
         nil

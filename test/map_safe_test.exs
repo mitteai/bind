@@ -289,4 +289,75 @@ defmodule Bind.MapSafeTest do
       assert mapped == params
     end
   end
+
+  describe "map_safe/2 with Result tuples" do
+    test "unwraps {:ok, value} tuples from transformations" do
+      params = %{"user_id[eq]" => "valid_123", "name[eq]" => "alice"}
+
+      result =
+        Bind.map_safe(params, %{
+          user_id: fn id -> HashIds.decode(id) end,
+          name: &String.upcase/1
+        })
+
+      assert {:ok, mapped} = result
+
+      assert mapped == %{
+               "user_id[eq]" => 123,
+               "name[eq]" => "ALICE"
+             }
+    end
+
+    test "returns error from {:error, reason} tuples" do
+      params = %{"user_id[eq]" => "invalid_hash"}
+
+      result =
+        Bind.map_safe(params, %{
+          user_id: fn id -> HashIds.decode(id) end
+        })
+
+      assert {:error, {:transformation_failed, "invalid hash"}} = result
+    end
+
+    test "handles mixed return types from mappers" do
+      params = %{
+        "user_id[eq]" => "valid_123",
+        "team_id[eq]" => "valid_456",
+        "name[eq]" => "alice"
+      }
+
+      result =
+        Bind.map_safe(params, %{
+          # returns {:ok, val}
+          user_id: fn id -> HashIds.decode(id) end,
+          # returns val directly
+          team_id: fn id -> HashIds.decode!(id) end,
+          # returns val directly
+          name: &String.upcase/1
+        })
+
+      assert {:ok, mapped} = result
+
+      assert mapped == %{
+               "user_id[eq]" => 123,
+               "team_id[eq]" => 456,
+               "name[eq]" => "ALICE"
+             }
+    end
+
+    test "stops on first error in Result tuple" do
+      params = %{
+        "user_id[eq]" => "valid_123",
+        "team_id[eq]" => "invalid_hash",
+        "org_id[eq]" => "valid_456"
+      }
+
+      result =
+        Bind.map_safe(params, %{
+          ~r/_id$/i => fn id -> HashIds.decode(id) end
+        })
+
+      assert {:error, {:transformation_failed, "invalid hash"}} = result
+    end
+  end
 end

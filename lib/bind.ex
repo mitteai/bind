@@ -254,17 +254,23 @@ defmodule Bind do
   def map_safe(params, field_mappers) when is_map(params) do
     try do
       result =
-        Enum.reduce(params, %{}, fn {key, value}, acc ->
+        Enum.reduce_while(params, {:ok, %{}}, fn {key, value}, {:ok, acc} ->
           case Bind.Parse.where_field(key) do
             [field_name, _] ->
               field = to_string(field_name)
-              new_value = find_mapper(field_mappers, field).(value)
-              Map.put(acc, key, new_value)
+
+              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
+                {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
+                {:error, reason} -> {:halt, {:error, reason}}
+              end
 
             [json_field, _json_key, _constraint] ->
               field = to_string(json_field)
-              new_value = find_mapper(field_mappers, field).(value)
-              Map.put(acc, key, new_value)
+
+              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
+                {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
+                {:error, reason} -> {:halt, {:error, reason}}
+              end
 
             nil ->
               {field, is_negated} =
@@ -273,15 +279,32 @@ defmodule Bind do
                   false -> {key, false}
                 end
 
-              new_value = find_mapper(field_mappers, field).(value)
-              final_key = if is_negated, do: "-#{field}", else: field
-              Map.put(acc, final_key, new_value)
+              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
+                {:ok, new_value} ->
+                  final_key = if is_negated, do: "-#{field}", else: field
+                  {:cont, {:ok, Map.put(acc, final_key, new_value)}}
+
+                {:error, reason} ->
+                  {:halt, {:error, reason}}
+              end
           end
         end)
 
-      {:ok, result}
+      case result do
+        {:ok, mapped} -> {:ok, mapped}
+        {:error, reason} -> {:error, {:transformation_failed, reason}}
+      end
     rescue
       e -> {:error, {:transformation_failed, Exception.message(e)}}
+    end
+  end
+
+  # Apply mapper and handle result tuples
+  defp apply_mapper_safe(mapper, value) do
+    case mapper.(value) do
+      {:ok, result} -> {:ok, result}
+      {:error, reason} -> {:error, reason}
+      result -> {:ok, result}
     end
   end
 end

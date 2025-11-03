@@ -218,4 +218,70 @@ defmodule Bind do
         mapper
     end
   end
+
+  # Add this to lib/bind.ex after the existing map/2 function
+
+  @doc """
+  Maps over query parameters with error handling.
+  Returns {:ok, mapped_params} on success or {:error, reason} on failure.
+
+  ## Examples
+
+      # Success case
+      params = %{"user_id[eq]" => "valid_hash"}
+      {:ok, mapped} = Bind.map_safe(params, %{
+        user_id: fn id -> HashIds.decode!(id) end
+      })
+
+      # Error case
+      params = %{"user_id[eq]" => "bad_hash"}
+      {:error, {:transformation_failed, reason}} = Bind.map_safe(params, %{
+        user_id: fn id -> HashIds.decode!(id) end
+      })
+
+      # Use in controller with pattern matching
+      case Bind.map_safe(params, %{asset_id: &decode_id!/1}) do
+        {:ok, attrs} -> create_resource(attrs)
+        {:error, _} -> send_error_response()
+      end
+  """
+  def map_safe(query_string, field_mappers) when is_binary(query_string) do
+    query_string
+    |> URI.decode_query()
+    |> map_safe(field_mappers)
+  end
+
+  def map_safe(params, field_mappers) when is_map(params) do
+    try do
+      result =
+        Enum.reduce(params, %{}, fn {key, value}, acc ->
+          case Bind.Parse.where_field(key) do
+            [field_name, _] ->
+              field = to_string(field_name)
+              new_value = find_mapper(field_mappers, field).(value)
+              Map.put(acc, key, new_value)
+
+            [json_field, _json_key, _constraint] ->
+              field = to_string(json_field)
+              new_value = find_mapper(field_mappers, field).(value)
+              Map.put(acc, key, new_value)
+
+            nil ->
+              {field, is_negated} =
+                case String.starts_with?(key, "-") do
+                  true -> {String.trim_leading(key, "-"), true}
+                  false -> {key, false}
+                end
+
+              new_value = find_mapper(field_mappers, field).(value)
+              final_key = if is_negated, do: "-#{field}", else: field
+              Map.put(acc, final_key, new_value)
+          end
+        end)
+
+      {:ok, result}
+    rescue
+      e -> {:error, {:transformation_failed, Exception.message(e)}}
+    end
+  end
 end

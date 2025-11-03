@@ -226,6 +226,59 @@ Bind.map(params, %{
 
 Note: Value transformation only applies to filter fields (e.g. [eq], [gte]), not to sort/limit/pagination params.
 
+### Safe Parameter Transformation
+
+Use `Bind.map_safe/2` when transformations might fail. It returns `{:ok, mapped_params}` on success or `{:error, reason}` on failure:
+```ex
+params
+|> Bind.map_safe(%{
+  asset_id: fn hash -> HashIds.decode!(hash) end
+})
+```
+
+This is useful in Phoenix controllers with `with` statements:
+
+```ex
+def create(conn, params) do
+  with {:ok, attrs} <-
+         params
+         |> Map.put("user_id", conn.assigns.current_user.id)
+         |> Bind.map_safe(%{
+           asset_id: fn hash -> decode_id!(hash) end
+         }),
+       {:ok, resource} <- create_resource(attrs) do
+    conn
+    |> put_status(:created)
+    |> render(:show, result: resource)
+  else
+    {:error, {:transformation_failed, _reason}} ->
+      conn
+      |> put_status(:bad_request)
+      |> json(%{error: "Invalid parameter format"})
+
+    {:error, changeset} ->
+      conn
+      |> put_status(:unprocessable_entity)
+      |> render(:error, changeset: changeset)
+  end
+end
+```
+
+**Difference between `map/2` and `map_safe/2`:**
+
+- `Bind.map/2`: Raises exceptions if transformation fails (use when you're confident inputs are valid)
+- `Bind.map_safe/2`: Returns error tuples if transformation fails (use when inputs might be invalid)
+
+```ex
+# map/2 - raises on error
+Bind.map(params, %{id: &decode!/1})
+# => raises if decode! fails
+
+# map_safe/2 - returns error tuple
+Bind.map_safe(params, %{id: &decode!/1})
+# => {:ok, mapped} or {:error, {:transformation_failed, reason}}
+```
+
 ### Access Control with Filters
 
 You can use filters to enforce access control and limit what users can query. Filters compose nicely with the query builder:

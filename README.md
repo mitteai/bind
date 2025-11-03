@@ -236,32 +236,28 @@ params
 })
 ```
 
-This is useful in Phoenix controllers with `with` statements:
-
+`map_safe/2` automatically handles Result tuples (`{:ok, value}` / `{:error, reason}`) returned by mapper functions:
 ```ex
-def create(conn, params) do
-  with {:ok, attrs} <-
-         params
-         |> Map.put("user_id", conn.assigns.current_user.id)
-         |> Bind.map_safe(%{
-           asset_id: fn hash -> decode_id!(hash) end
-         }),
-       {:ok, resource} <- create_resource(attrs) do
-    conn
-    |> put_status(:created)
-    |> render(:show, result: resource)
-  else
-    {:error, {:transformation_failed, _reason}} ->
-      conn
-      |> put_status(:bad_request)
-      |> json(%{error: "Invalid parameter format"})
+# Mapper returns {:ok, value} - automatically unwrapped
+params
+|> Bind.map_safe(%{
+  asset_id: fn hash -> decode_id(hash) end  # returns {:ok, id}
+})
+# => {:ok, %{"asset_id[eq]" => id}}
 
-    {:error, changeset} ->
-      conn
-      |> put_status(:unprocessable_entity)
-      |> render(:error, changeset: changeset)
-  end
-end
+# Mapper returns {:error, reason} - propagated as error
+params
+|> Bind.map_safe(%{
+  asset_id: fn hash -> decode_id(hash) end  # returns {:error, "invalid"}
+})
+# => {:error, {:transformation_failed, "invalid"}}
+
+# Mix of return types works seamlessly
+Bind.map_safe(params, %{
+  user_id: fn id -> decode(id) end,      # {:ok, val} or {:error, reason}
+  team_id: fn id -> decode!(id) end,     # val or raises
+  name: &String.upcase/1                 # val directly
+})
 ```
 
 **Difference between `map/2` and `map_safe/2`:**

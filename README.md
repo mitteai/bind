@@ -260,6 +260,22 @@ Bind.map_safe(params, %{
 })
 ```
 
+**Empty value handling:**
+
+Empty values (`nil` or `""`) are automatically removed from the result if a mapper is defined for that field. Fields without mappers preserve empty values:
+
+```ex
+params = %{"user_id[eq]" => "", "name[eq]" => ""}
+
+Bind.map_safe(params, %{
+  user_id: fn id -> decode!(id) end
+})
+
+# => {:ok, %{"name[eq]" => ""}}
+# user_id[eq] is removed (has mapper + empty value)
+# name[eq] is kept (no mapper)
+```
+
 **Difference between `map/2` and `map_safe/2`:**
 
 - `Bind.map/2`: Raises exceptions if transformation fails (use when you're confident inputs are valid)

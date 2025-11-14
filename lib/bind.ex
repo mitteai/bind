@@ -258,18 +258,30 @@ defmodule Bind do
           case Bind.Parse.where_field(key) do
             [field_name, _] ->
               field = to_string(field_name)
+              mapper = find_mapper(field_mappers, field)
 
-              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
-                {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
-                {:error, reason} -> {:halt, {:error, reason}}
+              # Only skip if value is empty AND there's an actual mapper (not identity)
+              if should_skip_transformation?(value) && has_custom_mapper?(field_mappers, field) do
+                {:cont, {:ok, acc}}
+              else
+                case apply_mapper_safe(mapper, value) do
+                  {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
+                  {:error, reason} -> {:halt, {:error, reason}}
+                end
               end
 
             [json_field, _json_key, _constraint] ->
               field = to_string(json_field)
+              mapper = find_mapper(field_mappers, field)
 
-              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
-                {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
-                {:error, reason} -> {:halt, {:error, reason}}
+              # Only skip if value is empty AND there's an actual mapper (not identity)
+              if should_skip_transformation?(value) && has_custom_mapper?(field_mappers, field) do
+                {:cont, {:ok, acc}}
+              else
+                case apply_mapper_safe(mapper, value) do
+                  {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
+                  {:error, reason} -> {:halt, {:error, reason}}
+                end
               end
 
             nil ->
@@ -279,13 +291,20 @@ defmodule Bind do
                   false -> {key, false}
                 end
 
-              case apply_mapper_safe(find_mapper(field_mappers, field), value) do
-                {:ok, new_value} ->
-                  final_key = if is_negated, do: "-#{field}", else: field
-                  {:cont, {:ok, Map.put(acc, final_key, new_value)}}
+              mapper = find_mapper(field_mappers, field)
 
-                {:error, reason} ->
-                  {:halt, {:error, reason}}
+              # Only skip if value is empty AND there's an actual mapper (not identity)
+              if should_skip_transformation?(value) && has_custom_mapper?(field_mappers, field) do
+                {:cont, {:ok, acc}}
+              else
+                case apply_mapper_safe(mapper, value) do
+                  {:ok, new_value} ->
+                    final_key = if is_negated, do: "-#{field}", else: field
+                    {:cont, {:ok, Map.put(acc, final_key, new_value)}}
+
+                  {:error, reason} ->
+                    {:halt, {:error, reason}}
+                end
               end
           end
         end)
@@ -305,6 +324,25 @@ defmodule Bind do
       {:ok, result} -> {:ok, result}
       {:error, reason} -> {:error, reason}
       result -> {:ok, result}
+    end
+  end
+
+  defp should_skip_transformation?(value) do
+    value in [nil, ""]
+  end
+
+  defp has_custom_mapper?(mappers, field) do
+    # Check if there's an actual mapper (not identity function)
+    case Map.get(mappers, String.to_atom(field)) do
+      nil ->
+        # Check regex patterns
+        Enum.any?(mappers, fn
+          {%Regex{} = re, _} -> Regex.match?(re, field)
+          _ -> false
+        end)
+
+      _ ->
+        true
     end
   end
 end

@@ -38,8 +38,11 @@ defmodule Bind.QueryBuilder do
             nil ->
               dynamic
 
-            # Join field - skip in where, handled separately
+            # Join fields - skip in where, handled separately
             [_assoc, _field, _constraint, :join] ->
+              dynamic
+
+            [_assoc, _field, _json_key, _constraint, :join_jsonb] ->
               dynamic
 
             parsed_field ->
@@ -69,6 +72,14 @@ defmodule Bind.QueryBuilder do
             {:error, "Join not allowed: #{assoc}"}
           end
 
+        # Validate join_jsonb is allowed
+        [assoc, _field, _json_key, _constraint, :join_jsonb] ->
+          if assoc in allowed_joins do
+            nil
+          else
+            {:error, "Join not allowed: #{assoc}"}
+          end
+
         parsed_field ->
           case build_constraint(parsed_field, param_value) do
             {:error, reason} -> {:error, reason}
@@ -88,14 +99,18 @@ defmodule Bind.QueryBuilder do
 
   @doc """
   Extracts join fields from params and groups by association.
-  Returns map of %{assoc_name => [{field, constraint, value}, ...]}
+  Returns map of %{assoc_name => [{:field, field, constraint, value} | {:jsonb, field, json_key, constraint, value}, ...]}
   """
   def extract_joins(params) do
     Enum.reduce(params, %{}, fn {param, value}, acc ->
       case Bind.Parse.where_field(param) do
         [assoc, field, constraint, :join] ->
           joins = Map.get(acc, assoc, [])
-          Map.put(acc, assoc, [{field, constraint, value} | joins])
+          Map.put(acc, assoc, [{:field, field, constraint, value} | joins])
+
+        [assoc, field, json_key, constraint, :join_jsonb] ->
+          joins = Map.get(acc, assoc, [])
+          Map.put(acc, assoc, [{:jsonb, field, json_key, constraint, value} | joins])
 
         _ ->
           acc
@@ -115,9 +130,14 @@ defmodule Bind.QueryBuilder do
         q = join(q, :inner, [r], j in assoc(r, ^assoc), as: ^assoc)
 
         # Add where conditions for this join
-        Enum.reduce(constraints, q, fn {field, constraint, value}, q2 ->
-          dynamic = join_constraint(assoc, field, constraint, value)
-          where(q2, ^dynamic)
+        Enum.reduce(constraints, q, fn
+          {:field, field, constraint, value}, q2 ->
+            dynamic = join_constraint(assoc, field, constraint, value)
+            where(q2, ^dynamic)
+
+          {:jsonb, field, json_key, constraint, value}, q2 ->
+            dynamic = join_jsonb_constraint(assoc, field, json_key, constraint, value)
+            where(q2, ^dynamic)
         end)
       else
         q
@@ -183,6 +203,23 @@ defmodule Bind.QueryBuilder do
     dynamic([{^assoc, j}], field(j, ^field) in ^values)
   end
 
+  # Build dynamic for join JSONB constraint
+  defp join_jsonb_constraint(assoc, field, json_key, "eq", value) do
+    dynamic([{^assoc, j}], fragment("? ->> ? = ?", field(j, ^field), ^json_key, ^value))
+  end
+
+  defp join_jsonb_constraint(assoc, field, json_key, "contains", value) do
+    dynamic([{^assoc, j}], fragment("? ->> ? ILIKE ?", field(j, ^field), ^json_key, ^"%#{value}%"))
+  end
+
+  defp join_jsonb_constraint(assoc, field, json_key, "starts_with", value) do
+    dynamic([{^assoc, j}], fragment("? ->> ? ILIKE ?", field(j, ^field), ^json_key, ^"#{value}%"))
+  end
+
+  defp join_jsonb_constraint(assoc, field, json_key, "ends_with", value) do
+    dynamic([{^assoc, j}], fragment("? ->> ? ILIKE ?", field(j, ^field), ^json_key, ^"%#{value}"))
+  end
+
   # Handle both regular fields and JSONB fields
   defp build_constraint([field, constraint], value) do
     constraint(field, constraint, value)
@@ -194,20 +231,6 @@ defmodule Bind.QueryBuilder do
 
   @doc """
   Parses a constraint and returns a dynamic query fragment.
-
-  ## Parameters
-    - `field`: The field to apply the constraint to.
-    - `constraint`: The type of constraint (e.g., "eq", "gte").
-    - `value`: The value to compare the field against.
-
-  ## Examples
-
-      > Bind.Parse.constraint(:name, "eq", "Alice")
-      dynamic([r], r.name == ^"Alice")
-
-      > Bind.Parse.constraint(:age, "gte", 30)
-      dynamic([r], r.age > ^30)
-
   """
   def constraint(field, "eq", value) do
     dynamic([r], field(r, ^field) == ^value)
@@ -267,7 +290,6 @@ defmodule Bind.QueryBuilder do
   end
 
   def constraint(field, constraint, _value) do
-    # Here we add an error clause that matches any unknown constraint.
     {:error, "Invalid constraint: #{field}[#{constraint}]"}
   end
 

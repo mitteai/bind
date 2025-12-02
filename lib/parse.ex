@@ -1,5 +1,3 @@
-## File: bind/lib/parse.ex
-
 defmodule Bind.Parse do
   import Ecto.Query
 
@@ -34,39 +32,24 @@ defmodule Bind.Parse do
   - Regular fields: "name[eq]" -> [:name, "eq"]
   - JSONB dot notation: "options.prompt[contains]" -> [:options, "prompt", "contains"]
   - Join colon notation: "current_version:content_title[contains]" -> [:current_version, :content_title, "contains", :join]
+  - Join with JSONB: "current_version:flow_input.prompt[contains]" -> [:current_version, :flow_input, "prompt", "contains", :join_jsonb]
 
   ## Parameters
     - `param`: The where parameter as a string.
 
-  ## Examples
-
-      > Bind.Parse.where_field("name[eq]")
-      [:name, "eq"]
-
-      > Bind.Parse.where_field("options.prompt[contains]")
-      [:options, "prompt", "contains"]
-
-      > Bind.Parse.where_field("current_version:content_title[contains]")
-      [:current_version, :content_title, "contains", :join]
-
   """
   def where_field(param) do
-    case Regex.match?(~r/^\w+(\.\w+)?\[\w+\]$/, param) do
+    # Join with JSONB: assoc:field.jsonkey[constraint]
+    case Regex.match?(~r/^\w+:\w+\.\w+\[\w+\]$/, param) do
       true ->
-        [field_part, constraint] = String.split(param, "[")
+        [assoc_field_part, constraint] = String.split(param, "[")
         constraint = String.trim(constraint, "]")
-
-        case String.contains?(field_part, ".") do
-          true ->
-            [json_field, json_key] = String.split(field_part, ".")
-            [String.to_atom(json_field), json_key, constraint]
-
-          false ->
-            [String.to_atom(field_part), constraint]
-        end
+        [assoc, field_jsonkey] = String.split(assoc_field_part, ":")
+        [field, json_key] = String.split(field_jsonkey, ".")
+        [String.to_atom(assoc), String.to_atom(field), json_key, constraint, :join_jsonb]
 
       false ->
-        # Check for join syntax: association:field[constraint]
+        # Regular join: assoc:field[constraint]
         case Regex.match?(~r/^\w+:\w+\[\w+\]$/, param) do
           true ->
             [assoc_field_part, constraint] = String.split(param, "[")
@@ -75,7 +58,24 @@ defmodule Bind.Parse do
             [String.to_atom(assoc), String.to_atom(field), constraint, :join]
 
           false ->
-            nil
+            # Regular field or JSONB
+            case Regex.match?(~r/^\w+(\.\w+)?\[\w+\]$/, param) do
+              true ->
+                [field_part, constraint] = String.split(param, "[")
+                constraint = String.trim(constraint, "]")
+
+                case String.contains?(field_part, ".") do
+                  true ->
+                    [json_field, json_key] = String.split(field_part, ".")
+                    [String.to_atom(json_field), json_key, constraint]
+
+                  false ->
+                    [String.to_atom(field_part), constraint]
+                end
+
+              false ->
+                nil
+            end
         end
     end
   end

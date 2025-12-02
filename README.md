@@ -308,3 +308,23 @@ def index(conn, _params) do
   render(conn, :index, posts: my_posts)
 end
 ```
+
+### Join Queries
+
+Query fields on associated tables using colon syntax: `association:field[operator]`
+
+```
+GET /users?address:city[eq]=berlin
+GET /users?address:city[contains]=ber&sort=-id
+```
+
+
+Fields that you can run join query must be white-listed:
+
+```ex
+def index(conn, _params) do
+  users = conn.query_string
+    |> Bind.query(User, joins: [:address]) # allow join queries
+    |> Repo.all()
+end
+```

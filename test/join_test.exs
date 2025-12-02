@@ -1,3 +1,5 @@
+## File: bind/test/join_test.exs
+
 defmodule Bind.JoinTest do
   use ExUnit.Case
 
@@ -8,10 +10,7 @@ defmodule Bind.JoinTest do
       field(:content_title, :string)
       field(:content_type, :string)
       field(:status, :string)
-
-      # JSONB field (map in Ecto)
       field(:flow_input, :map)
-
       belongs_to(:asset, Bind.JoinTest.Asset)
     end
   end
@@ -88,7 +87,6 @@ defmodule Bind.JoinTest do
     query = Bind.query(params, Asset, joins: [:current_version])
     query_string = inspect(query)
 
-    # Should only have one join
     assert length(Regex.scan(~r/join:/, query_string)) == 1
     assert query_string =~ "cat"
     assert query_string =~ "done"
@@ -111,14 +109,66 @@ defmodule Bind.JoinTest do
     query = Bind.query(params, Asset, joins: [:current_version])
     query_string = inspect(query)
 
-    # Should join on current_version
     assert query_string =~ "join:"
     assert query_string =~ "current_version"
-
-    # Should build a JSONB fragment on flow_input->>'prompt'
     assert query_string =~ "fragment"
     assert query_string =~ "flow_input"
     assert query_string =~ "prompt"
     assert query_string =~ "fofofo"
+  end
+
+  test "map_safe handles join jsonb fields" do
+    params = %{
+      "current_version:flow_input.prompt[contains]" => "cat",
+      "start" => "123"
+    }
+
+    result = Bind.map_safe(params, %{
+      start: fn id -> String.to_integer(id) end
+    })
+
+    assert {:ok, mapped} = result
+    assert mapped["current_version:flow_input.prompt[contains]"] == "cat"
+    assert mapped["start"] == 123
+  end
+
+  test "map_safe transforms join jsonb field values" do
+    params = %{
+      "current_version:flow_input.prompt[contains]" => "CAT"
+    }
+
+    result = Bind.map_safe(params, %{
+      flow_input: &String.downcase/1
+    })
+
+    assert {:ok, mapped} = result
+    assert mapped["current_version:flow_input.prompt[contains]"] == "cat"
+  end
+
+  test "map handles join jsonb fields" do
+    params = %{
+      "current_version:flow_input.prompt[contains]" => "DOG"
+    }
+
+    mapped = Bind.map(params, %{
+      flow_input: &String.downcase/1
+    })
+
+    assert mapped["current_version:flow_input.prompt[contains]"] == "dog"
+  end
+
+  test "map_safe skips empty join jsonb values with mapper" do
+    params = %{
+      "current_version:flow_input.prompt[contains]" => "",
+      "asset_type[eq]" => "image"
+    }
+
+    result = Bind.map_safe(params, %{
+      flow_input: fn _ -> raise "should not be called" end
+    })
+
+    assert {:ok, mapped} = result
+    refute Map.has_key?(mapped, "current_version:flow_input.prompt[contains]")
+    assert mapped["asset_type[eq]"] == "image"
   end
 end

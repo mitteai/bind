@@ -15,20 +15,20 @@ defmodule Bind.QueryBuilder do
   end
 
   def add_offset_query(query, params) do
-  cond do
-    start_id = Map.get(params, "start") ->
-      Ecto.Query.where(query, [r], field(r, :id) > ^start_id)
+    cond do
+      start_id = Map.get(params, "start") ->
+        Ecto.Query.where(query, [r], field(r, :id) > ^start_id)
 
-    start_id = Map.get(params, "-start") ->
-      Ecto.Query.where(query, [r], field(r, :id) < ^start_id)
+      start_id = Map.get(params, "-start") ->
+        Ecto.Query.where(query, [r], field(r, :id) < ^start_id)
 
-    true ->
-      query
+      true ->
+        query
+    end
   end
-end
 
-  def build_where_query(params) do
-    case validate_where_query(params) do
+  def build_where_query(params, allowed_joins \\ []) do
+    case validate_where_query(params, allowed_joins) do
       {:error, reason} ->
         {:error, reason}
 
@@ -36,6 +36,10 @@ end
         Enum.reduce(params, Ecto.Query.dynamic(true), fn {param, param_value}, dynamic ->
           case Bind.Parse.where_field(param) do
             nil ->
+              dynamic
+
+            # Join field - skip in where, handled separately
+            [_assoc, _field, _constraint, :join] ->
               dynamic
 
             parsed_field ->
@@ -51,11 +55,19 @@ end
     end
   end
 
-  def validate_where_query(params) do
+  def validate_where_query(params, allowed_joins \\ []) do
     Enum.find_value(params, fn {param, param_value} ->
       case Bind.Parse.where_field(param) do
         nil ->
           nil
+
+        # Validate join is allowed
+        [assoc, _field, _constraint, :join] ->
+          if assoc in allowed_joins do
+            nil
+          else
+            {:error, "Join not allowed: #{assoc}"}
+          end
 
         parsed_field ->
           case build_constraint(parsed_field, param_value) do
@@ -72,6 +84,103 @@ end
       "" -> [asc: :id]
       sort_param -> Bind.Parse.sort_field(sort_param)
     end
+  end
+
+  @doc """
+  Extracts join fields from params and groups by association.
+  Returns map of %{assoc_name => [{field, constraint, value}, ...]}
+  """
+  def extract_joins(params) do
+    Enum.reduce(params, %{}, fn {param, value}, acc ->
+      case Bind.Parse.where_field(param) do
+        [assoc, field, constraint, :join] ->
+          joins = Map.get(acc, assoc, [])
+          Map.put(acc, assoc, [{field, constraint, value} | joins])
+
+        _ ->
+          acc
+      end
+    end)
+  end
+
+  @doc """
+  Builds join clauses and where conditions for joined associations.
+  """
+  def apply_joins(query, params, allowed_joins) do
+    joins = extract_joins(params)
+
+    Enum.reduce(joins, query, fn {assoc, constraints}, q ->
+      if assoc in allowed_joins do
+        # Add join
+        q = join(q, :inner, [r], j in assoc(r, ^assoc), as: ^assoc)
+
+        # Add where conditions for this join
+        Enum.reduce(constraints, q, fn {field, constraint, value}, q2 ->
+          dynamic = join_constraint(assoc, field, constraint, value)
+          where(q2, ^dynamic)
+        end)
+      else
+        q
+      end
+    end)
+  end
+
+  # Build dynamic for join constraint
+  defp join_constraint(assoc, field, "eq", value) do
+    dynamic([{^assoc, j}], field(j, ^field) == ^value)
+  end
+
+  defp join_constraint(assoc, field, "neq", value) do
+    dynamic([{^assoc, j}], field(j, ^field) != ^value)
+  end
+
+  defp join_constraint(assoc, field, "gt", value) do
+    dynamic([{^assoc, j}], field(j, ^field) > ^value)
+  end
+
+  defp join_constraint(assoc, field, "gte", value) do
+    dynamic([{^assoc, j}], field(j, ^field) >= ^value)
+  end
+
+  defp join_constraint(assoc, field, "lt", value) do
+    dynamic([{^assoc, j}], field(j, ^field) < ^value)
+  end
+
+  defp join_constraint(assoc, field, "lte", value) do
+    dynamic([{^assoc, j}], field(j, ^field) <= ^value)
+  end
+
+  defp join_constraint(assoc, field, "contains", value) do
+    dynamic([{^assoc, j}], ilike(field(j, ^field), ^"%#{value}%"))
+  end
+
+  defp join_constraint(assoc, field, "starts_with", value) do
+    dynamic([{^assoc, j}], ilike(field(j, ^field), ^"#{value}%"))
+  end
+
+  defp join_constraint(assoc, field, "ends_with", value) do
+    dynamic([{^assoc, j}], ilike(field(j, ^field), ^"%#{value}"))
+  end
+
+  defp join_constraint(assoc, field, "true", _value) do
+    dynamic([{^assoc, j}], field(j, ^field) == true)
+  end
+
+  defp join_constraint(assoc, field, "false", _value) do
+    dynamic([{^assoc, j}], field(j, ^field) == false)
+  end
+
+  defp join_constraint(assoc, field, "nil", value) when value in ["true", true] do
+    dynamic([{^assoc, j}], is_nil(field(j, ^field)))
+  end
+
+  defp join_constraint(assoc, field, "nil", value) when value in ["false", false] do
+    dynamic([{^assoc, j}], not is_nil(field(j, ^field)))
+  end
+
+  defp join_constraint(assoc, field, "in", value) do
+    values = String.split(value, ",")
+    dynamic([{^assoc, j}], field(j, ^field) in ^values)
   end
 
   # Handle both regular fields and JSONB fields

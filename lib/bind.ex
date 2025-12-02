@@ -64,6 +64,8 @@ defmodule Bind do
   ## Parameters
       - `params`: A map of query parameters.
       - `schema`: The Ecto schema module (e.g., `MyApp.User`).
+      - `opts`: Optional keyword list with:
+        - `:joins` - List of allowed association names for join queries
 
   ## Examples
 
@@ -71,9 +73,17 @@ defmodule Bind do
       > Bind.query(MyApp.User, params)
       #Ecto.Query<from u0 in MyApp.User, where: u0.name == ^"Alice", where: u0.age >= ^30, order_by: [desc: u0.age]>
 
+      # With joins
+      > params = %{"current_version:content_title[contains]" => "cat"}
+      > Bind.query(params, MyApp.Asset, joins: [:current_version])
+
   """
-  def query(params, schema) when is_map(params) do
-    case Bind.QueryBuilder.build_where_query(params) do
+  def query(params, schema, opts \\ [])
+
+  def query(params, schema, opts) when is_map(params) do
+    allowed_joins = Keyword.get(opts, :joins, [])
+
+    case Bind.QueryBuilder.build_where_query(params, allowed_joins) do
       {:error, reason} ->
         {:error, reason}
 
@@ -82,6 +92,7 @@ defmodule Bind do
 
         schema
         |> where(^where_query)
+        |> Bind.QueryBuilder.apply_joins(params, allowed_joins)
         |> order_by(^Enum.into(sort_query, []))
         |> Bind.QueryBuilder.add_limit_query(params)
         |> Bind.QueryBuilder.add_offset_query(params)
@@ -94,16 +105,21 @@ defmodule Bind do
   ## Parameters
     - `query_string`: The query string from a URL.
     - `schema`: The Ecto schema module (e.g., `MyApp.User`).
+    - `opts`: Optional keyword list with:
+      - `:joins` - List of allowed association names for join queries
 
   ## Examples
       > query_string = "?name[eq]=Alice&age[gte]=30&sort=-age&limit=10"
       > Bind.query(query_string, MyApp.User)
       #Ecto.Query<from u0 in MyApp.User, where: u0.name == ^"Alice", where: u0.age >= ^30, order_by: [desc: u0.age]>
+
+      # With joins
+      > Bind.query("current_version:content_title[contains]=cat", MyApp.Asset, joins: [:current_version])
   """
-  def query(query_string, schema) when is_binary(query_string) do
+  def query(query_string, schema, opts) when is_binary(query_string) do
     query_string
     |> Bind.QueryString.to_map()
-    |> query(schema)
+    |> query(schema, opts)
   end
 
   @doc """
@@ -175,9 +191,15 @@ defmodule Bind do
           Map.put(acc, key, new_value)
 
         # Handle JSONB fields [json_field, json_key, constraint]
-        [json_field, _json_key, _constraint] ->
+        [json_field, _json_key, _constraint] when is_binary(_json_key) ->
           field = to_string(json_field)
           # Apply mapper to the main JSON field (e.g., "options")
+          new_value = find_mapper(field_mappers, field).(value)
+          Map.put(acc, key, new_value)
+
+        # Handle join fields [assoc, field, constraint, :join]
+        [_assoc, field_name, _constraint, :join] ->
+          field = to_string(field_name)
           new_value = find_mapper(field_mappers, field).(value)
           Map.put(acc, key, new_value)
 
@@ -270,11 +292,25 @@ defmodule Bind do
                 end
               end
 
-            [json_field, _json_key, _constraint] ->
+            [json_field, _json_key, _constraint] when is_binary(_json_key) ->
               field = to_string(json_field)
               mapper = find_mapper(field_mappers, field)
 
               # Only skip if value is empty AND there's an actual mapper (not identity)
+              if should_skip_transformation?(value) && has_custom_mapper?(field_mappers, field) do
+                {:cont, {:ok, acc}}
+              else
+                case apply_mapper_safe(mapper, value) do
+                  {:ok, new_value} -> {:cont, {:ok, Map.put(acc, key, new_value)}}
+                  {:error, reason} -> {:halt, {:error, reason}}
+                end
+              end
+
+            # Handle join fields [assoc, field, constraint, :join]
+            [_assoc, field_name, _constraint, :join] ->
+              field = to_string(field_name)
+              mapper = find_mapper(field_mappers, field)
+
               if should_skip_transformation?(value) && has_custom_mapper?(field_mappers, field) do
                 {:cont, {:ok, acc}}
               else

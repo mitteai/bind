@@ -1,3 +1,5 @@
+## File: bind/lib/parse.ex
+
 defmodule Bind.Parse do
   import Ecto.Query
 
@@ -28,7 +30,10 @@ defmodule Bind.Parse do
 
   @doc """
   Parses a where parameter to extract the field name and constraint.
-  Now supports JSONB dot notation like "options.prompt[contains]".
+  Supports:
+  - Regular fields: "name[eq]" -> [:name, "eq"]
+  - JSONB dot notation: "options.prompt[contains]" -> [:options, "prompt", "contains"]
+  - Join colon notation: "current_version:content_title[contains]" -> [:current_version, :content_title, "contains", :join]
 
   ## Parameters
     - `param`: The where parameter as a string.
@@ -40,6 +45,9 @@ defmodule Bind.Parse do
 
       > Bind.Parse.where_field("options.prompt[contains]")
       [:options, "prompt", "contains"]
+
+      > Bind.Parse.where_field("current_version:content_title[contains]")
+      [:current_version, :content_title, "contains", :join]
 
   """
   def where_field(param) do
@@ -58,7 +66,17 @@ defmodule Bind.Parse do
         end
 
       false ->
-        nil
+        # Check for join syntax: association:field[constraint]
+        case Regex.match?(~r/^\w+:\w+\[\w+\]$/, param) do
+          true ->
+            [assoc_field_part, constraint] = String.split(param, "[")
+            constraint = String.trim(constraint, "]")
+            [assoc, field] = String.split(assoc_field_part, ":")
+            [String.to_atom(assoc), String.to_atom(field), constraint, :join]
+
+          false ->
+            nil
+        end
     end
   end
 end

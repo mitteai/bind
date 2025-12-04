@@ -146,11 +146,23 @@ defmodule Bind.QueryBuilder do
   end
 
   def constraint(field, "search", value) do
-    dynamic([r], fragment("? @@ to_tsquery('simple', ?)", field(r, ^field), ^"#{value}:*"))
+    tsquery =
+      value
+      |> String.split(~r/\s+/, trim: true)
+      |> Enum.map(&"#{&1}:*")
+      |> Enum.join(" & ")
+
+    dynamic([r], fragment("? @@ to_tsquery('simple', ?)", field(r, ^field), ^tsquery))
   end
 
   defp join_constraint(assoc, field, "search", value) do
-    dynamic([{^assoc, j}], fragment("? @@ to_tsquery('simple', ?)", field(j, ^field), ^"#{value}:*"))
+    tsquery =
+      value
+      |> String.split(~r/\s+/, trim: true)
+      |> Enum.map(&"#{&1}:*")
+      |> Enum.join(" & ")
+
+    dynamic([{^assoc, j}], fragment("? @@ to_tsquery('simple', ?)", field(j, ^field), ^tsquery))
   end
 
   # Build dynamic for join constraint
@@ -217,7 +229,10 @@ defmodule Bind.QueryBuilder do
   end
 
   defp join_jsonb_constraint(assoc, field, json_key, "contains", value) do
-    dynamic([{^assoc, j}], fragment("? ->> ? ILIKE ?", field(j, ^field), ^json_key, ^"%#{value}%"))
+    dynamic(
+      [{^assoc, j}],
+      fragment("? ->> ? ILIKE ?", field(j, ^field), ^json_key, ^"%#{value}%")
+    )
   end
 
   defp join_jsonb_constraint(assoc, field, json_key, "starts_with", value) do

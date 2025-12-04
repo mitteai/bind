@@ -103,4 +103,13 @@ defmodule Bind.TsvectorTest do
     assert result =~ "to_tsquery"
     assert result =~ "bear"
   end
+
+  test "tsvector search converts multiple words to tsquery format" do
+    params = %{"search_content[search]" => "global warming"}
+
+    query = Bind.query(params, AssetVersion)
+    query_string = inspect(query)
+
+    assert query_string =~ "global:* & warming:*"
+  end
 end

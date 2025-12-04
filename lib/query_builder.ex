@@ -145,6 +145,14 @@ defmodule Bind.QueryBuilder do
     end)
   end
 
+  def constraint(field, "search", value) do
+    dynamic([r], fragment("? @@ to_tsquery('simple', ?)", field(r, ^field), ^"#{value}:*"))
+  end
+
+  defp join_constraint(assoc, field, "search", value) do
+    dynamic([{^assoc, j}], fragment("? @@ to_tsquery('simple', ?)", field(j, ^field), ^"#{value}:*"))
+  end
+
   # Build dynamic for join constraint
   defp join_constraint(assoc, field, "eq", value) do
     dynamic([{^assoc, j}], field(j, ^field) == ^value)

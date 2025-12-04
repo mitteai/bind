@@ -125,6 +125,7 @@ List of comparison operators supported:
 -   `in`: In a list of values
 -   `contains`: String contains
 -   `nil`: Is nil (or is not nil)
+-   `search`: Full-text search with tsvector
 
 ### JSONB Search
 
@@ -327,4 +328,21 @@ def index(conn, _params) do
     |> Bind.query(User, joins: [:address]) # allow join queries
     |> Repo.all()
 end
+```
+
+### Full-Text Search
+
+For PostgreSQL tsvector columns, use the `search` operator:
+```ex
+%{"bio[search]" => "engineer"}
+```
+
+Examples in URLs:
+```
+GET /users?keywords[search]=engineer
+```
+
+This generates a query using PostgreSQL's full-text search:
+```sql
+WHERE keywords @@ to_tsquery('simple', 'engineer:*')
 ```

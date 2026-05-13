@@ -125,6 +125,7 @@ List of comparison operators supported:
 -   `in`: In a list of values
 -   `contains`: String contains
 -   `nil`: Is nil (or is not nil)
+-   `empty`: JSONB array is empty (or not empty)
 -   `search`: Full-text search with tsvector
 
 ### JSONB Search
@@ -149,6 +150,27 @@ Supported JSONB operators:
 - `contains`: Case-insensitive substring search
 - `starts_with`: Case-insensitive prefix search
 - `ends_with`: Case-insensitive suffix search
+- `empty`: JSONB array length check (`true` for empty, `false` for non-empty)
+
+### Empty (JSONB arrays)
+
+Check whether a JSONB array is empty. Works on a column whose value is an array directly, or on a nested key whose value is an array:
+
+```ex
+# Column value is an array, e.g. tags = [123, 23]
+%{"tags[empty]" => "true"}    # tags is []
+%{"tags[empty]" => "false"}   # tags has at least one element
+
+# Nested key, e.g. options = %{"foobar" => []}
+%{"options.foobar[empty]" => "true"}
+%{"options.foobar[empty]" => "false"}
+```
+
+Examples in URLs:
+```
+GET /videos?tags[empty]=true
+GET /videos?options.foobar[empty]=false
+```
 
 ### Sorting
 

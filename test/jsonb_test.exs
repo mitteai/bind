@@ -6,6 +6,7 @@ defmodule Bind.JsonbTest do
 
     schema "video_versions" do
       field(:options, :map)
+      field(:tags, {:array, :integer})
       field(:user_id, :string)
     end
   end
@@ -33,6 +34,56 @@ defmodule Bind.JsonbTest do
     assert query_string =~ "fragment"
     assert query_string =~ "duration"
     assert query_string =~ " = "
+  end
+
+  test "jsonb direct array empty=true" do
+    params = %{"tags[empty]" => "true"}
+
+    query = Bind.query(params, VideoVersion)
+    query_string = inspect(query)
+
+    assert query_string =~ "fragment"
+    assert query_string =~ "jsonb_array_length"
+    assert query_string =~ "tags"
+    assert query_string =~ "= 0"
+  end
+
+  test "jsonb direct array empty=false" do
+    params = %{"tags[empty]" => "false"}
+
+    query = Bind.query(params, VideoVersion)
+    query_string = inspect(query)
+
+    assert query_string =~ "fragment"
+    assert query_string =~ "jsonb_array_length"
+    assert query_string =~ "tags"
+    assert query_string =~ "> 0"
+  end
+
+  test "jsonb nested key array empty=true" do
+    params = %{"options.foobar[empty]" => "true"}
+
+    query = Bind.query(params, VideoVersion)
+    query_string = inspect(query)
+
+    assert query_string =~ "fragment"
+    assert query_string =~ "jsonb_array_length"
+    assert query_string =~ "options"
+    assert query_string =~ "foobar"
+    assert query_string =~ "= 0"
+  end
+
+  test "jsonb nested key array empty=false" do
+    params = %{"options.foobar[empty]" => "false"}
+
+    query = Bind.query(params, VideoVersion)
+    query_string = inspect(query)
+
+    assert query_string =~ "fragment"
+    assert query_string =~ "jsonb_array_length"
+    assert query_string =~ "options"
+    assert query_string =~ "foobar"
+    assert query_string =~ "> 0"
   end
 
   test "combines regular and jsonb constraints" do

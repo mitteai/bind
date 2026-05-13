@@ -312,6 +312,14 @@ defmodule Bind.QueryBuilder do
     dynamic([r], not is_nil(field(r, ^field)))
   end
 
+  def constraint(field, "empty", value) when value in ["true", true] do
+    dynamic([r], fragment("jsonb_array_length(?) = 0", field(r, ^field)))
+  end
+
+  def constraint(field, "empty", value) when value in ["false", false] do
+    dynamic([r], fragment("jsonb_array_length(?) > 0", field(r, ^field)))
+  end
+
   def constraint(field, constraint, _value) do
     {:error, "Invalid constraint: #{field}[#{constraint}]"}
   end
@@ -331,6 +339,20 @@ defmodule Bind.QueryBuilder do
 
   def jsonb_constraint(json_field, json_key, "ends_with", value) do
     dynamic([r], fragment("? ->> ? ILIKE ?", field(r, ^json_field), ^json_key, ^"%#{value}"))
+  end
+
+  def jsonb_constraint(json_field, json_key, "empty", value) when value in ["true", true] do
+    dynamic(
+      [r],
+      fragment("jsonb_array_length(? -> ?) = 0", field(r, ^json_field), ^json_key)
+    )
+  end
+
+  def jsonb_constraint(json_field, json_key, "empty", value) when value in ["false", false] do
+    dynamic(
+      [r],
+      fragment("jsonb_array_length(? -> ?) > 0", field(r, ^json_field), ^json_key)
+    )
   end
 
   def jsonb_constraint(json_field, json_key, constraint, _value) do

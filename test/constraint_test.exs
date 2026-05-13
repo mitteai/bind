@@ -73,6 +73,20 @@ defmodule Bind.ConstraintTest do
       assert inspect(query) =~ "not is_nil(r.deleted_at)"
     end
 
+    test "empty constraint with true" do
+      query = QueryBuilder.constraint(:tags, "empty", "true")
+      query_string = inspect(query)
+      assert query_string =~ "jsonb_array_length"
+      assert query_string =~ "= 0"
+    end
+
+    test "empty constraint with false" do
+      query = QueryBuilder.constraint(:tags, "empty", "false")
+      query_string = inspect(query)
+      assert query_string =~ "jsonb_array_length"
+      assert query_string =~ "> 0"
+    end
+
     test "invalid constraint" do
       assert QueryBuilder.constraint(:name, "invalid", "value") == {:error, "Invalid constraint: name[invalid]"}
     end

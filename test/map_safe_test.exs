@@ -290,6 +290,60 @@ defmodule Bind.MapSafeTest do
     end
   end
 
+  describe "per-element mapping for in constraints" do
+    test "map_safe applies the mapper to each comma-separated element" do
+      params = %{"user_id[in]" => "valid_123,valid_456"}
+
+      result =
+        Bind.map_safe(params, %{
+          user_id: fn id -> HashIds.decode!(id) end
+        })
+
+      assert {:ok, mapped} = result
+      assert mapped == %{"user_id[in]" => [123, 456]}
+    end
+
+    test "map_safe unwraps {:ok, value} tuples per element" do
+      params = %{"user_id[in]" => "valid_123,valid_456"}
+
+      result =
+        Bind.map_safe(params, %{
+          user_id: fn id -> HashIds.decode(id) end
+        })
+
+      assert {:ok, mapped} = result
+      assert mapped == %{"user_id[in]" => [123, 456]}
+    end
+
+    test "map_safe halts on the first failing element" do
+      params = %{"user_id[in]" => "valid_123,bad_hash"}
+
+      result =
+        Bind.map_safe(params, %{
+          user_id: fn id -> HashIds.decode(id) end
+        })
+
+      assert {:error, {:transformation_failed, "invalid hash"}} = result
+    end
+
+    test "map_safe leaves in values without a custom mapper untouched" do
+      params = %{"status[in]" => "active,pending"}
+
+      result = Bind.map_safe(params, %{user_id: fn id -> HashIds.decode!(id) end})
+
+      assert {:ok, mapped} = result
+      assert mapped == %{"status[in]" => "active,pending"}
+    end
+
+    test "map applies the mapper to each comma-separated element" do
+      params = %{"user_id[in]" => "valid_123,valid_456"}
+
+      mapped = Bind.map(params, %{user_id: fn id -> HashIds.decode!(id) end})
+
+      assert mapped == %{"user_id[in]" => [123, 456]}
+    end
+  end
+
   describe "map_safe/2 with Result tuples" do
     test "unwraps {:ok, value} tuples from transformations" do
       params = %{"user_id[eq]" => "valid_123", "name[eq]" => "alice"}

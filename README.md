@@ -352,6 +352,41 @@ def index(conn, _params) do
 end
 ```
 
+### Virtual Fields
+
+Expose filters that keep the `field[op]` notation but aren't columns — bind parses the param, your function writes the SQL. Useful when a filter is more than one join away:
+
+```ex
+def index(conn, _params) do
+  chats = conn.query_string
+    |> Bind.query(Chat, virtual: %{asset_id: &Chats.scope_touching_asset/2})
+    |> Repo.all()
+end
+
+# GET /chats?asset_id[eq]=123 calls scope_touching_asset(query, 123)
+def scope_touching_asset(query, asset_id) do
+  chat_ids =
+    from m in ChatMessage,
+      join: r in NodeRun, on: r.chat_message_id == m.id,
+      join: v in AssetVersion, on: v.node_run_id == r.id,
+      where: v.asset_id == ^asset_id,
+      select: m.chat_id
+
+  from c in query, where: c.id in subquery(chat_ids)
+end
+```
+
+A bare function answers `eq` only. Declare more constraints as a keyword list; `in` values arrive as a list (comma-split from the query string):
+
+```ex
+virtual: %{
+  asset_id: [
+    eq: &Chats.scope_touching_asset/2,
+    in: &Chats.scope_touching_any_asset/2
+  ]
+}
+```
+
 ### Full-Text Search
 
 For PostgreSQL tsvector columns, use the `search` operator:

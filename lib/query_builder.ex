@@ -89,6 +89,14 @@ defmodule Bind.QueryBuilder do
     end)
   end
 
+  @doc """
+  Normalizes an `in` constraint value to a list: a binary is comma-split,
+  a list passes through, anything else is wrapped.
+  """
+  def in_values(value) when is_binary(value), do: String.split(value, ",")
+  def in_values(value) when is_list(value), do: value
+  def in_values(value), do: [value]
+
   def build_sort_query(params) do
     case params["sort"] do
       nil -> [asc: :id]
@@ -219,8 +227,7 @@ defmodule Bind.QueryBuilder do
   end
 
   defp join_constraint(assoc, field, "in", value) do
-    values = String.split(value, ",")
-    dynamic([{^assoc, j}], field(j, ^field) in ^values)
+    dynamic([{^assoc, j}], field(j, ^field) in ^in_values(value))
   end
 
   # Build dynamic for join JSONB constraint
@@ -296,8 +303,7 @@ defmodule Bind.QueryBuilder do
   end
 
   def constraint(field, "in", value) do
-    values = String.split(value, ",")
-    dynamic([r], field(r, ^field) in ^values)
+    dynamic([r], field(r, ^field) in ^in_values(value))
   end
 
   def constraint(field, "contains", value) do

@@ -58,6 +58,16 @@ defmodule Bind.ConstraintTest do
       assert inspect(query) =~ "r.status in ^[\"active\", \"pending\"]"
     end
 
+    test "in constraint with list value passes through" do
+      query = QueryBuilder.constraint(:status, "in", ["active", "pending"])
+      assert inspect(query) =~ "r.status in ^[\"active\", \"pending\"]"
+    end
+
+    test "in constraint with non-binary scalar wraps in a list" do
+      query = QueryBuilder.constraint(:count, "in", 5)
+      assert inspect(query) =~ "r.count in ^[5]"
+    end
+
     test "contains constraint" do
       query = QueryBuilder.constraint(:description, "contains", "important")
       assert inspect(query) =~ "ilike(r.description, ^\"%important%\")"

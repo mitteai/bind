@@ -6,6 +6,10 @@ on:
   push:
     branches: [main]
 
+# The job only reads the repo; the token gets nothing more.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest

@@ -60,6 +60,40 @@ defmodule Bind do
   end
 
   @doc """
+  Whether the params ask for the number of matching rows: `count=true` (or `1`).
+  `count` is a reserved key like `sort`, `limit` and `start`.
+  """
+  def count?(query_string) when is_binary(query_string) do
+    query_string
+    |> Bind.QueryString.to_map()
+    |> count?()
+  end
+
+  def count?(params) when is_map(params) do
+    # the query-string path turns "1" into the integer 1
+    Map.get(params, "count") in [true, "true", "1", 1]
+  end
+
+  @doc """
+  Turns a query from `query/3`, with any scopes piped after it, into one that
+  selects how many rows it matches: the filters, joins and cursor stay, sort,
+  limit and preloads drop. Run it with `Repo.one/1`.
+
+  The query is counted as a subquery, so a scope's `distinct`, `group_by` or
+  `select` never changes the number.
+  """
+  def count(%Ecto.Query{} = query) do
+    rows =
+      query
+      |> exclude(:order_by)
+      |> exclude(:limit)
+      |> exclude(:offset)
+      |> exclude(:preload)
+
+    from(r in subquery(rows), select: count())
+  end
+
+  @doc """
   Maps over query parameters, letting you transform values by pattern matching field names.
   """
   def map(query_string, field_mappers) when is_binary(query_string) do

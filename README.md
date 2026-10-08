@@ -38,7 +38,7 @@ end
 ## API
 
 ```ex
-Bind.query(schema, params)
+Bind.query(params, schema)
 ```
 
 Parameters:
@@ -203,6 +203,23 @@ Example:
 Example for descending pagination:
 ```
 GET /users?sort=-created_at&-start=-100
+```
+
+### Counting
+
+Set `count=true` to ask how many rows match, without paging through them. `count` is a reserved key like `sort`, `limit` and `start`.
+
+```ex
+query = Bind.query(params, User) |> scope_to_viewer(viewer)
+users = Repo.all(query)
+count = if Bind.count?(params), do: Repo.one(Bind.count(query))
+```
+
+`Bind.count/1` takes the query `Bind.query/3` built, with any scopes piped after it, and selects how many rows it matches: the filters, joins and cursor stay, sort, limit and preloads drop. The query is counted as a subquery, so a scope's `distinct`, `group_by` or `select` never changes the number.
+
+```
+GET /users?count=true&limit=0           # just the number
+GET /users?active[true]&count=true      # first page plus the number
 ```
 
 ### Query String Support

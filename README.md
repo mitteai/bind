@@ -217,6 +217,8 @@ count = if Bind.count?(params), do: Repo.one(Bind.count(query))
 
 `Bind.count/1` takes the query `Bind.query/3` built, with any scopes piped after it, and selects how many rows it matches: the filters, joins and cursor stay, sort, limit and preloads drop. The query is counted as a subquery, so a scope's `distinct`, `group_by` or `select` never changes the number.
 
+The cursor is a where on id, so with `start` or `-start` the count is the rows past it and shrinks as a client pages. Ask for the total on the first page, which has no cursor.
+
 ```
 GET /users?count=true&limit=0           # just the number
 GET /users?active[true]&count=true      # first page plus the number

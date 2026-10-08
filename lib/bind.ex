@@ -79,6 +79,10 @@ defmodule Bind do
   selects how many rows it matches: the filters, joins and cursor stay, sort,
   limit and preloads drop. Run it with `Repo.one/1`.
 
+  The cursor (`start`, `-start`) is a where on id, so with one the count is
+  the rows past it and shrinks as a client pages. The listing's total comes
+  from the first page, which has no cursor.
+
   The query is counted as a subquery, so a scope's `distinct`, `group_by` or
   `select` never changes the number.
   """
